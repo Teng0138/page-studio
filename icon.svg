@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title id="title">Page &amp; Wallpaper</title>
+  <defs>
+    <clipPath id="rounded">
+      <rect width="64" height="64" rx="14"/>
+    </clipPath>
+    <linearGradient id="cream" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f8f1df"/>
+      <stop offset="1" stop-color="#eadfc5"/>
+    </linearGradient>
+  </defs>
+  <g clip-path="url(#rounded)">
+    <rect width="64" height="64" fill="#d6e9d7"/>
+    <path d="M0 44C10 34 18 36 27 43C36 50 46 50 64 37V64H0Z" fill="#a9c9ad"/>
+    <path d="M0 54C14 45 23 47 32 53C41 59 51 58 64 48V64H0Z" fill="#7ba583"/>
+    <circle cx="49" cy="14" r="9" fill="url(#cream)"/>
+    <path d="M0 22C12 12 22 14 32 21C42 28 52 26 64 15V0H0Z" fill="#f7f3e8" opacity=".55"/>
+  </g>
+  <circle cx="29" cy="29" r="13" fill="#ffffff" fill-opacity=".92"/>
+  <circle cx="29" cy="29" r="13" fill="none" stroke="#245e42" stroke-width="3.6"/>
+  <path d="M38.8 38.8 50 50" fill="none" stroke="#245e42" stroke-width="4" stroke-linecap="round"/>
+  <path d="M23.5 29H34.5M29 23.5V34.5" fill="none" stroke="#245e42" stroke-width="2.6" stroke-linecap="round"/>
+</svg>
