@@ -871,6 +871,101 @@ window.__ModuleLoader__.load({
           viewportPatched = false;
         }
 
+        /*
+         * Event-coordinate compatibility.
+         *
+         * The rect patch makes getBoundingClientRect() report *layout* pixels,
+         * but pointer events keep reporting *visual* pixels under root zoom
+         * (clientX is measured against the scaled paint). Widgets that do
+         * hit-testing with `clientX - rect.left` (the whale widget's isWhaleHit,
+         * usage bars, drag math) then land in the wrong place — the inevitable
+         * flip side of the same coordinate split. Patch event coordinates to
+         * layout pixels as well so `event - rect` math stays consistent.
+         *
+         * document.elementFromPoint(x, y) is the reverse case: callers pass the
+         * (now-layout) coordinates, but the native API resolves them against the
+         * visual paint, so the patch translates layout -> visual for it.
+         */
+        const eventNative = {
+          mouseX: null,
+          mouseY: null,
+          touchX: null,
+          touchY: null,
+          elementFromPoint: null,
+        };
+        let eventPatched = false;
+
+        function eventCoordRead(getter, receiver) {
+          const value = getter.call(receiver);
+          return zoomFactor === 1 ? value : value / zoomFactor;
+        }
+
+        function defineEventGetter(proto, key, saved) {
+          const desc = Object.getOwnPropertyDescriptor(proto, key);
+          if (!desc || typeof desc.get !== 'function') return;
+          saved[key] = desc.get;
+          Object.defineProperty(proto, key, {
+            configurable: true,
+            get() {
+              return eventCoordRead(saved[key], this);
+            },
+          });
+        }
+
+        function restoreEventGetter(proto, key, saved) {
+          if (!saved[key]) return;
+          Object.defineProperty(proto, key, {
+            configurable: true,
+            get: saved[key],
+          });
+        }
+
+        function installEventPatch() {
+          if (eventPatched || typeof window === 'undefined') return;
+          try {
+            if (typeof MouseEvent !== 'undefined' && MouseEvent.prototype) {
+              defineEventGetter(MouseEvent.prototype, 'clientX', eventNative);
+              defineEventGetter(MouseEvent.prototype, 'clientY', eventNative);
+            }
+            if (typeof Touch !== 'undefined' && Touch.prototype) {
+              defineEventGetter(Touch.prototype, 'clientX', eventNative);
+              defineEventGetter(Touch.prototype, 'clientY', eventNative);
+            }
+            if (
+              typeof Document !== 'undefined' &&
+              Document.prototype &&
+              typeof Document.prototype.elementFromPoint === 'function'
+            ) {
+              eventNative.elementFromPoint = Document.prototype.elementFromPoint;
+              Document.prototype.elementFromPoint = function elementFromPointCompat(x, y) {
+                if (zoomFactor === 1) {
+                  return eventNative.elementFromPoint.call(this, x, y);
+                }
+                return eventNative.elementFromPoint.call(this, x * zoomFactor, y * zoomFactor);
+              };
+            }
+          } catch (error) {
+            /* Some hosts lock these properties; degrade gracefully. */
+          }
+          eventPatched = true;
+        }
+
+        function restoreEventPatch() {
+          if (!eventPatched) return;
+          if (typeof MouseEvent !== 'undefined' && MouseEvent.prototype) {
+            restoreEventGetter(MouseEvent.prototype, 'clientX', eventNative);
+            restoreEventGetter(MouseEvent.prototype, 'clientY', eventNative);
+          }
+          if (typeof Touch !== 'undefined' && Touch.prototype) {
+            restoreEventGetter(Touch.prototype, 'clientX', eventNative);
+            restoreEventGetter(Touch.prototype, 'clientY', eventNative);
+          }
+          if (eventNative.elementFromPoint && typeof Document !== 'undefined') {
+            Document.prototype.elementFromPoint = eventNative.elementFromPoint;
+          }
+          eventPatched = false;
+        }
+
         function applyWallpaper() {
           if (themeDisposer) {
             themeDisposer();
@@ -1168,10 +1263,12 @@ window.__ModuleLoader__.load({
         ctx.effect(() => {
           installRectCompat();
           installViewportPatch();
+          installEventPatch();
           applyZoom();
           return () => {
             restoreRectCompat();
             restoreViewportPatch();
+            restoreEventPatch();
             if (!rootElement) return;
             if (previousZoom) {
               rootElement.style.setProperty('zoom', previousZoom, previousZoomPriority);
