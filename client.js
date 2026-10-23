@@ -777,6 +777,100 @@ window.__ModuleLoader__.load({
           rectCompatInstalled = false;
         }
 
+        /*
+         * Viewport-read compatibility.
+         *
+         * Root-level CSS `zoom` keeps the layout viewport at its full size, so
+         * window.innerWidth/innerHeight (and clientWidth/clientHeight) still
+         * report layout pixels. Code that anchors floating widgets to the
+         * *visible* edges (e.g. corner mascots that compute `right = vp.w - w`
+         * and re-position on resize) then lands off-screen when zoomed in —
+         * under native browser zoom those APIs report the *visible* size
+         * (innerWidth == layoutWidth / zoom). Expose the same semantics here:
+         * viewport reads divide by the zoom factor while zoom != 1, so
+         * resize-driven re-positioning (the whale's settle(), DSH menu clamps)
+         * keeps everything inside the visible area, like native zoom.
+         */
+        const viewportNative = {
+          innerWidth: null,
+          innerHeight: null,
+          clientWidth: null,
+          clientHeight: null,
+        };
+        let viewportPatched = false;
+
+        function viewportRead(getter, receiver) {
+          const value = getter.call(receiver);
+          return zoomFactor === 1 ? value : value / zoomFactor;
+        }
+
+        function installViewportPatch() {
+          if (viewportPatched || typeof window === 'undefined' || !rootElement) return;
+          const windowDesc = (key) =>
+            Object.getOwnPropertyDescriptor(window, key) ||
+            Object.getOwnPropertyDescriptor(Window.prototype, key);
+          const elementDesc = (key) => Object.getOwnPropertyDescriptor(Element.prototype, key);
+
+          try {
+            const iw = windowDesc('innerWidth');
+            if (iw && typeof iw.get === 'function') {
+              viewportNative.innerWidth = iw.get;
+              Object.defineProperty(window, 'innerWidth', {
+                configurable: true,
+                get() {
+                  return viewportRead(viewportNative.innerWidth, window);
+                },
+              });
+            }
+            const ih = windowDesc('innerHeight');
+            if (ih && typeof ih.get === 'function') {
+              viewportNative.innerHeight = ih.get;
+              Object.defineProperty(window, 'innerHeight', {
+                configurable: true,
+                get() {
+                  return viewportRead(viewportNative.innerHeight, window);
+                },
+              });
+            }
+            const cw = elementDesc('clientWidth');
+            if (cw && typeof cw.get === 'function') {
+              viewportNative.clientWidth = cw.get;
+              Object.defineProperty(rootElement, 'clientWidth', {
+                configurable: true,
+                get() {
+                  return viewportRead(viewportNative.clientWidth, rootElement);
+                },
+              });
+            }
+            const ch = elementDesc('clientHeight');
+            if (ch && typeof ch.get === 'function') {
+              viewportNative.clientHeight = ch.get;
+              Object.defineProperty(rootElement, 'clientHeight', {
+                configurable: true,
+                get() {
+                  return viewportRead(viewportNative.clientHeight, rootElement);
+                },
+              });
+            }
+          } catch (error) {
+            /* Some hosts lock these properties; degrade gracefully. */
+          }
+          viewportPatched = true;
+        }
+
+        function restoreViewportPatch() {
+          if (!viewportPatched) return;
+          if (typeof window !== 'undefined') {
+            delete window.innerWidth;
+            delete window.innerHeight;
+          }
+          if (rootElement) {
+            delete rootElement.clientWidth;
+            delete rootElement.clientHeight;
+          }
+          viewportPatched = false;
+        }
+
         function applyWallpaper() {
           if (themeDisposer) {
             themeDisposer();
@@ -1073,9 +1167,11 @@ window.__ModuleLoader__.load({
 
         ctx.effect(() => {
           installRectCompat();
+          installViewportPatch();
           applyZoom();
           return () => {
             restoreRectCompat();
+            restoreViewportPatch();
             if (!rootElement) return;
             if (previousZoom) {
               rootElement.style.setProperty('zoom', previousZoom, previousZoomPriority);

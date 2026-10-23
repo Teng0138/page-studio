@@ -40,10 +40,11 @@ Harness positions its floating layers by reading the anchor's rect and then writ
 Page Studio (≥ v1.1.0) fixes this at the source:
 
 1. **Rect compatibility layer** — wraps `Element.prototype.getBoundingClientRect` / `getClientRects` and `Range.prototype.getBoundingClientRect` / `getClientRects` to always report layout pixels (a no-op fast path at 100 % zoom). Every consumer — including Harness's own menu positioning — then works in one consistent space, exactly like native browser zoom.
-2. **Re-measure on zoom change** — after the zoom factor changes, synthetic `resize` / `scroll` events are dispatched on `window` so already-open overlays reposition immediately.
-3. **Clean restore** — the original prototypes are restored when the plugin is disabled or unloaded.
+2. **Viewport-read compatibility** (≥ v1.2.0) — while zoomed, `window.innerWidth` / `innerHeight` and `document.documentElement.clientWidth` / `clientHeight` report the *visible* size (layout ÷ zoom), matching native browser zoom semantics. This keeps corner-pinned widgets (e.g. the `dsh-whale-widget` mascot) inside the visible area: their own resize-driven re-positioning reads the patched viewport and anchors to the on-screen edges instead of drifting off-screen.
+3. **Re-measure on zoom change** — after the zoom factor changes, synthetic `resize` / `scroll` events are dispatched on `window` so already-open overlays reposition immediately (the whale's `settle()`, Harness menus, …).
+4. **Clean restore** — the original prototypes are restored when the plugin is disabled or unloaded.
 
-See `client.js` (`rectCompat` / `installRectCompat` / `restoreRectCompat`) for the implementation.
+See `client.js` (`rectCompat` / `installRectCompat` / `restoreRectCompat`, `viewportNative` / `installViewportPatch` / `restoreViewportPatch`) for the implementation.
 
 ## Installation
 
