@@ -718,6 +718,52 @@ window.__ModuleLoader__.load({
         };
         let rectCompatInstalled = false;
 
+        /*
+         * Native-view exemption.
+         *
+         * DSH hosts its usage / recharge pages in an Electron WebContentsView
+         * ("native Platform view") whose position is driven by the renderer:
+         * the host component reads its placeholder container's
+         * getBoundingClientRect() and sends those numbers to the main process,
+         * which places the native view at those *physical* pixels. Under CSS
+         * zoom those numbers must stay *visual* (×zoom, unpatched), otherwise
+         * the native view lands offset and smaller than its container — the
+         * "recharge page smaller than the UI" symptom. Recognize that
+         * placeholder (a `_viewport`-classed element inside a body-level
+         * role="dialog" aria-modal overlay that carries a header with
+         * `data-window-drag` — the unique PlatformOverlay shape) and report
+         * its rect unpatched. Everything else keeps the layout-pixel patch.
+         */
+        const platformViewportCache = typeof WeakSet !== 'undefined' ? new WeakSet() : null;
+
+        function isPlatformOverlayViewport(el) {
+          if (!el || zoomFactor === 1 || platformViewportCache === null) return false;
+          if (platformViewportCache.has(el)) return true;
+          const cls = el.className;
+          if (typeof cls !== 'string' || !/_viewport$/.test(cls)) return false;
+          let node = el;
+          while (node && node.parentElement) {
+            node = node.parentElement;
+            if (node === document.body) return false;
+            if (node.getAttribute && node.getAttribute('role') === 'dialog' && node.getAttribute('aria-modal') === 'true') {
+              if (node.parentElement !== document.body) return false;
+              let hasDragHeader = false;
+              for (const child of node.children) {
+                if (child.tagName === 'HEADER' && child.hasAttribute && child.hasAttribute('data-window-drag')) {
+                  hasDragHeader = true;
+                  break;
+                }
+              }
+              if (hasDragHeader) {
+                platformViewportCache.add(el);
+                return true;
+              }
+              return false;
+            }
+          }
+          return false;
+        }
+
         function unzoomRect(rect) {
           if (!rect || zoomFactor === 1) return rect;
           return new DOMRect(
@@ -740,10 +786,16 @@ window.__ModuleLoader__.load({
           rectCompat.elementRect = Element.prototype.getBoundingClientRect;
           rectCompat.elementRects = Element.prototype.getClientRects;
           Element.prototype.getBoundingClientRect = function getBoundingClientRectCompat() {
-            return unzoomRect(rectCompat.elementRect.call(this));
+            const rect = rectCompat.elementRect.call(this);
+            if (zoomFactor === 1) return rect;
+            if (isPlatformOverlayViewport(this)) return rect;
+            return unzoomRect(rect);
           };
           Element.prototype.getClientRects = function getClientRectsCompat() {
-            return unzoomRectList(rectCompat.elementRects.call(this));
+            const list = rectCompat.elementRects.call(this);
+            if (zoomFactor === 1) return list;
+            if (isPlatformOverlayViewport(this)) return list;
+            return unzoomRectList(list);
           };
           if (typeof Range !== 'undefined') {
             rectCompat.rangeRect = Range.prototype.getBoundingClientRect;
