@@ -900,23 +900,31 @@ window.__ModuleLoader__.load({
           return zoomFactor === 1 ? value : value / zoomFactor;
         }
 
-        function defineEventGetter(proto, key, saved) {
+        /*
+         * Patch one event-coordinate getter onto a prototype. `slot` is the key
+         * in `eventNative` that stores the ORIGINAL getter — it must be distinct
+         * per (prototype, property) pair: MouseEvent and Touch both expose
+         * clientX, and their native getters require their own instance type as
+         * `this`, so mixing the saved getters would make reads return undefined
+         * for one of the two event kinds.
+         */
+        function patchEventGetter(proto, key, slot) {
           const desc = Object.getOwnPropertyDescriptor(proto, key);
           if (!desc || typeof desc.get !== 'function') return;
-          saved[key] = desc.get;
+          eventNative[slot] = desc.get;
           Object.defineProperty(proto, key, {
             configurable: true,
             get() {
-              return eventCoordRead(saved[key], this);
+              return eventCoordRead(eventNative[slot], this);
             },
           });
         }
 
-        function restoreEventGetter(proto, key, saved) {
-          if (!saved[key]) return;
+        function restoreEventGetter(proto, key, slot) {
+          if (!eventNative[slot]) return;
           Object.defineProperty(proto, key, {
             configurable: true,
-            get: saved[key],
+            get: eventNative[slot],
           });
         }
 
@@ -924,12 +932,12 @@ window.__ModuleLoader__.load({
           if (eventPatched || typeof window === 'undefined') return;
           try {
             if (typeof MouseEvent !== 'undefined' && MouseEvent.prototype) {
-              defineEventGetter(MouseEvent.prototype, 'clientX', eventNative);
-              defineEventGetter(MouseEvent.prototype, 'clientY', eventNative);
+              patchEventGetter(MouseEvent.prototype, 'clientX', 'mouseX');
+              patchEventGetter(MouseEvent.prototype, 'clientY', 'mouseY');
             }
             if (typeof Touch !== 'undefined' && Touch.prototype) {
-              defineEventGetter(Touch.prototype, 'clientX', eventNative);
-              defineEventGetter(Touch.prototype, 'clientY', eventNative);
+              patchEventGetter(Touch.prototype, 'clientX', 'touchX');
+              patchEventGetter(Touch.prototype, 'clientY', 'touchY');
             }
             if (
               typeof Document !== 'undefined' &&
@@ -953,12 +961,12 @@ window.__ModuleLoader__.load({
         function restoreEventPatch() {
           if (!eventPatched) return;
           if (typeof MouseEvent !== 'undefined' && MouseEvent.prototype) {
-            restoreEventGetter(MouseEvent.prototype, 'clientX', eventNative);
-            restoreEventGetter(MouseEvent.prototype, 'clientY', eventNative);
+            restoreEventGetter(MouseEvent.prototype, 'clientX', 'mouseX');
+            restoreEventGetter(MouseEvent.prototype, 'clientY', 'mouseY');
           }
           if (typeof Touch !== 'undefined' && Touch.prototype) {
-            restoreEventGetter(Touch.prototype, 'clientX', eventNative);
-            restoreEventGetter(Touch.prototype, 'clientY', eventNative);
+            restoreEventGetter(Touch.prototype, 'clientX', 'touchX');
+            restoreEventGetter(Touch.prototype, 'clientY', 'touchY');
           }
           if (eventNative.elementFromPoint && typeof Document !== 'undefined') {
             Document.prototype.elementFromPoint = eventNative.elementFromPoint;
@@ -1263,12 +1271,10 @@ window.__ModuleLoader__.load({
         ctx.effect(() => {
           installRectCompat();
           installViewportPatch();
-          installEventPatch();
           applyZoom();
           return () => {
             restoreRectCompat();
             restoreViewportPatch();
-            restoreEventPatch();
             if (!rootElement) return;
             if (previousZoom) {
               rootElement.style.setProperty('zoom', previousZoom, previousZoomPriority);
