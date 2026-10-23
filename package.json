@@ -3,6 +3,10 @@
   "version": "1.1.0",
   "description": "Page zoom with Ctrl+wheel and eye-care or custom wallpaper colors for the Harness Web UI.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Teng0138/page-studio.git"
+  },
   "keywords": [
     "deepseek-harness",
     "dsh",
