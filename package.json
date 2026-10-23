@@ -1,6 +1,6 @@
 {
   "name": "@local/page-studio",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "description": "Page zoom with Ctrl+wheel and eye-care or custom wallpaper colors for the Harness Web UI.",
   "license": "MIT",
   "repository": {

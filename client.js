@@ -860,13 +860,41 @@ window.__ModuleLoader__.load({
 
         function restoreViewportPatch() {
           if (!viewportPatched) return;
+          /*
+           * Restore with defineProperty, not delete. In real Blink, innerWidth/
+           * innerHeight are OWN properties of the window object (not on
+           * Window.prototype), so `delete window.innerWidth` permanently removes
+           * the property and leaves it undefined. Reinstalling the saved native
+           * getter always restores the original accessor regardless of whether
+           * it lived on the instance or a prototype.
+           */
           if (typeof window !== 'undefined') {
-            delete window.innerWidth;
-            delete window.innerHeight;
+            if (viewportNative.innerWidth) {
+              Object.defineProperty(window, 'innerWidth', {
+                configurable: true,
+                get: viewportNative.innerWidth,
+              });
+            }
+            if (viewportNative.innerHeight) {
+              Object.defineProperty(window, 'innerHeight', {
+                configurable: true,
+                get: viewportNative.innerHeight,
+              });
+            }
           }
           if (rootElement) {
-            delete rootElement.clientWidth;
-            delete rootElement.clientHeight;
+            if (viewportNative.clientWidth) {
+              Object.defineProperty(rootElement, 'clientWidth', {
+                configurable: true,
+                get: viewportNative.clientWidth,
+              });
+            }
+            if (viewportNative.clientHeight) {
+              Object.defineProperty(rootElement, 'clientHeight', {
+                configurable: true,
+                get: viewportNative.clientHeight,
+              });
+            }
           }
           viewportPatched = false;
         }
@@ -874,17 +902,26 @@ window.__ModuleLoader__.load({
         /*
          * Event-coordinate compatibility.
          *
-         * The rect patch makes getBoundingClientRect() report *layout* pixels,
-         * but pointer events keep reporting *visual* pixels under root zoom
-         * (clientX is measured against the scaled paint). Widgets that do
-         * hit-testing with `clientX - rect.left` (the whale widget's isWhaleHit,
-         * usage bars, drag math) then land in the wrong place — the inevitable
-         * flip side of the same coordinate split. Patch event coordinates to
-         * layout pixels as well so `event - rect` math stays consistent.
+         * Under root CSS zoom, real-browser measurement (headless Chrome, CDP
+         * Input.dispatchMouseEvent) shows pointer coordinates are *visual*:
+         * clicking the visual center of an element reports clientX == the
+         * element's visual rect.left + w/2, and document.elementFromPoint()
+         * resolves against the same visual paint. The rect patch above makes
+         * getBoundingClientRect() report *layout* pixels, so widgets that do
+         * hit-testing with `clientX - rect.left` (the whale widget's
+         * isWhaleHit, usage bars, drag math) mix the two spaces and land in the
+         * wrong place. Patch event coordinates to layout pixels as well so
+         * `event - rect` math stays consistent.
          *
          * document.elementFromPoint(x, y) is the reverse case: callers pass the
          * (now-layout) coordinates, but the native API resolves them against the
          * visual paint, so the patch translates layout -> visual for it.
+         *
+         * NOTE: the saved native getters must be kept in DISTINCT slots (mouseX/
+         * mouseY vs touchX/touchY). MouseEvent and Touch both own a native
+         * clientX getter that requires its own instance type as `this`; storing
+         * both under the same key made mouse events read the Touch getter and
+         * return undefined, disabling every pointer interaction globally.
          */
         const eventNative = {
           mouseX: null,
@@ -1271,10 +1308,12 @@ window.__ModuleLoader__.load({
         ctx.effect(() => {
           installRectCompat();
           installViewportPatch();
+          installEventPatch();
           applyZoom();
           return () => {
             restoreRectCompat();
             restoreViewportPatch();
+            restoreEventPatch();
             if (!rootElement) return;
             if (previousZoom) {
               rootElement.style.setProperty('zoom', previousZoom, previousZoomPriority);
